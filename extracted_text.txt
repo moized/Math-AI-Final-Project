@@ -1,0 +1,822 @@
+Tutorial on Variational Autoencoders
+CARL DOERSCH
+Carnegie Mellon / UC Berkeley
+August 16, 2016, with very minor revisions on January 3, 2021
+Abstract
+In just three years, Variational Autoencoders (VAEs) have emerged
+as one of the most popular approaches to unsupervised learning of
+complicated distributions. VAEs are appealing because they are built
+on top of standard function approximators (neural networks), and
+can be trained with stochastic gradient descent. VAEs have already
+shown promise in generating many kinds of complicated data, in-
+cluding handwritten digits [ 1,2], faces [ 1,3,4], house numbers [ 5,6],
+CIFAR images [ 6], physical models of scenes [ 4], segmentation [ 7], and
+predicting the future from static images [ 8]. This tutorial introduces the
+intuitions behind VAEs, explains the mathematics behind them, and
+describes some empirical behavior. No prior knowledge of variational
+Bayesian methods is assumed.
+Keywords: variational autoencoders, unsupervised learning, structured
+prediction, neural networks
+1 Introduction
+“Generative modeling” is a broad area of machine learning which deals with
+models of distributions P(X), deﬁned over datapoints Xin some potentially
+high-dimensional space X. For instance, images are a popular kind of data
+for which we might create generative models. Each “datapoint” (image) has
+thousands or millions of dimensions (pixels), and the generative model’s job
+is to somehow capture the dependencies between pixels, e.g., that nearby
+pixels have similar color, and are organized into objects. Exactly what it
+means to “capture” these dependencies depends on exactly what we want
+to do with the model. One straightforward kind of generative model simply
+allows us to compute P(X)numerically. In the case of images, Xvalues
+1arXiv:1606.05908v3  [stat.ML]  3 Jan 2021
+which look like real images should get high probability, whereas images
+that look like random noise should get low probability. However, models
+like this are not necessarily useful: knowing that one image is unlikely does
+not help us synthesize one that is likely.
+Instead, one often cares about producing more examples that are like
+those already in a database, but not exactly the same. We could start with a
+database of raw images and synthesize new, unseen images. We might take
+in a database of 3D models of something like plants and produce more of
+them to ﬁll a forest in a video game. We could take handwritten text and try
+to produce more handwritten text. Tools like this might actually be useful
+for graphic designers. We can formalize this setup by saying that we get
+examples Xdistributed according to some unknown distribution Pgt(X),
+and our goal is to learn a model Pwhich we can sample from, such that Pis
+as similar as possible to Pgt.
+Training this type of model has been a long-standing problem in the ma-
+chine learning community, and classically, most approaches have had one of
+three serious drawbacks. First, they might require strong assumptions about
+the structure in the data. Second, they might make severe approximations,
+leading to sub-optimal models. Or third, they might rely on computation-
+ally expensive inference procedures like Markov Chain Monte Carlo. More
+recently, some works have made tremendous progress in training neural
+networks as powerful function approximators through backpropagation [ 9].
+These advances have given rise to promising frameworks which can use
+backpropagation-based function approximators to build generative models.
+One of the most popular such frameworks is the Variational Autoen-
+coder [ 1,3], the subject of this tutorial. The assumptions of this model are
+weak, and training is fast via backpropagation. VAEs do make an approxi-
+mation, but the error introduced by this approximation is arguably small
+given high-capacity models. These characteristics have contributed to a
+quick rise in their popularity.
+This tutorial is intended to be an informal introduction to VAEs, and not
+a formal scientiﬁc paper about them. It is aimed at people who might have
+uses for generative models, but might not have a strong background in the
+variatonal Bayesian methods and “minimum description length” coding
+models on which VAEs are based. This tutorial began its life as a presentation
+for computer vision reading groups at UC Berkeley and Carnegie Mellon,
+and hence has a bias toward a vision audience. Suggestions for improvement
+are appreciated.
+2
+1.1 Preliminaries: Latent Variable Models
+When training a generative model, the more complicated the dependencies
+between the dimensions, the more difﬁcult the models are to train. Take,
+for example, the problem of generating images of handwritten characters.
+Say for simplicity that we only care about modeling the digits 0-9. If the left
+half of the character contains the left half of a 5, then the right half cannot
+contain the left half of a 0, or the character will very clearly not look like any
+real digit. Intuitively, it helps if the model ﬁrst decides which character to
+generate before it assigns a value to any speciﬁc pixel. This kind of decision
+is formally called a latent variable . That is, before our model draws anything,
+it ﬁrst randomly samples a digit value zfrom the set [0, ..., 9 ], and then makes
+sure all the strokes match that character. zis called ‘latent’ because given
+just a character produced by the model, we don’t necessarily know which
+settings of the latent variables generated the character. We would need to
+infer it using something like computer vision.
+Before we can say that our model is representative of our dataset, we
+need to make sure that for every datapoint Xin the dataset, there is one (or
+many) settings of the latent variables which causes the model to generate
+something very similar to X. Formally, say we have a vector of latent
+variables zin a high-dimensional space Zwhich we can easily sample
+according to some probability density function (PDF) P(z)deﬁned overZ.
+Then, say we have a family of deterministic functions f(z;q), parameterized
+by a vector qin some space Q, where f:ZQ!X .fis deterministic, but
+ifzis random and qis ﬁxed, then f(z;q)is a random variable in the space
+X. We wish to optimize qsuch that we can sample zfrom P(z)and, with
+high probability, f(z;q)will be like the X’s in our dataset.
+To make this notion precise mathematically, we are aiming maximize the
+probability of each Xin the training set under the entire generative process,
+according to:
+P(X) =Z
+P(Xjz;q)P(z)dz. (1)
+Here, f(z;q)has been replaced by a distribution P(Xjz;q), which allows us
+to make the dependence of Xonzexplicit by using the law of total probabil-
+ity. The intuition behind this framework—called “maximum likelihood”—
+is that if the model is likely to produce training set samples, then it is
+also likely to produce similar samples, and unlikely to produce dissimilar
+ones. In VAEs, the choice of this output distribution is often Gaussian, i.e.,
+P(Xjz;q) =N(Xjf(z;q),s2I). That is, it has mean f(z;q)and covariance
+equal to the identity matrix Itimes some scalar s(which is a hyperparam-
+eter). This replacement is necessary to formalize the intuition that some z
+3
+Figure 1: The standard VAE model represented as a graphical model. Note
+the conspicuous lack of any structure or even an “encoder” pathway: it is
+possible to sample from the model without any input. Here, the rectangle is
+“plate notation” meaning that we can sample from zand X N times while
+the model parameters qremain ﬁxed.
+needs to result in samples that are merely likeX. In general, and particularly
+early in training, our model will not produce outputs that are identical to
+any particular X. By having a Gaussian distribution, we can use gradient
+descent (or any other optimization technique) to increase P(X)by making
+f(z;q)approach Xfor some z, i.e., gradually making the training data more
+likely under the generative model. This wouldn’t be possible if P(Xjz)was
+a Dirac delta function, as it would be if we used X=f(z;q)deterministi-
+cally! Note that the output distribution is not required to be Gaussian: for
+instance, if Xis binary, then P(Xjz)might be a Bernoulli parameterized by
+f(z;q). The important property is simply that P(Xjz)can be computed, and
+is continuous in q. From here onward, we will omit qfrom f(z;q)to avoid
+clutter.
+2 Variational Autoencoders
+The mathematical basis of VAEs actually has relatively little to do with
+classical autoencoders, e.g. sparse autoencoders [ 10,11] or denoising au-
+toencoders [ 12,13]. VAEs approximately maximize Equation 1, according
+to the model shown in Figure 1. They are called “autoencoders” only be-
+cause the ﬁnal training objective that derives from this setup does have
+an encoder and a decoder, and resembles a traditional autoencoder. Unlike
+sparse autoencoders, there are generally no tuning parameters analogous to
+the sparsity penalties. And unlike sparse and denoising autoencoders, we
+4
+4
+ 3
+ 2
+ 1
+ 0 1 2 3 44
+3
+2
+1
+01234
+1.5
+ 1.0
+ 0.5
+ 0.0 0.5 1.0 1.51.5
+1.0
+0.5
+0.00.51.01.5Figure 2: Given a random variable zwith one distribution, we can create
+another random variable X=g(z)with a completely different distribution.
+Left: samples from a gaussian distribution. Right: those same samples
+mapped through the function g(z) =z/10+z/jjzjjto form a ring. This is
+the strategy that VAEs use to create arbitrary distributions: the deterministic
+function gis learned from data.
+can sample directly from P(X)(without performing Markov Chain Monte
+Carlo, as in [14]).
+To solve Equation 1, there are two problems that VAEs must deal with:
+how to deﬁne the latent variables z(i.e., decide what information they
+represent), and how to deal with the integral over z. VAEs give a deﬁnite
+answer to both.
+First, how do we choose the latent variables zsuch that we capture latent
+information? Returning to our digits example, the ‘latent’ decisions that the
+model needs to make before it begins painting the digit are actually rather
+complicated. It needs to choose not just the digit, but the angle that the digit
+is drawn, the stroke width, and also abstract stylistic properties. Worse, these
+properties may be correlated: a more angled digit may result if one writes
+faster, which also might tend to result in a thinner stroke. Ideally, we want
+to avoid deciding by hand what information each dimension of zencodes
+(although we may want to specify it by hand for some dimensions [ 4]). We
+also want to avoid explicitly describing the dependencies—i.e., the latent
+structure—between the dimensions of z. VAEs take an unusual approach to
+dealing with this problem: they assume that there is no simple interpretation
+of the dimensions of z, and instead assert that samples of zcan be drawn
+from a simple distribution, i.e., N(0,I), where Iis the identity matrix. How
+5
+(a) (b) (c)
+Figure 3: It’s hard to measure the likelihood of images under a model using
+only sampling. Given an image X(a), the middle sample (b) is much closer
+in Euclidean distance than the one on the right (c). Because pixel distance is
+so different from perceptual distance, a sample needs to be extremely close
+in pixel distance to a datapoint Xbefore it can be considered evidence that
+Xis likely under the model.
+is this possible? The key is to notice that any distribution in ddimensions can
+be generated by taking a set of dvariables that are normally distributed and
+mapping them through a sufﬁciently complicated function1. For example,
+say we wanted to construct a 2D random variable whose values lie on a
+ring. If zis 2D and normally distributed, g(z) =z/10+z/jjzjjis roughly
+ring-shaped, as shown in Figure 2. Hence, provided powerful function
+approximators, we can simply learn a function which maps our independent,
+normally-distributed zvalues to whatever latent variables might be needed
+for the model, and then map those latent variables to X. In fact, recall that
+P(Xjz;q) =N(Xjf(z;q),s2I). Iff(z;q)is a multi-layer neural network,
+then we can imagine the network using its ﬁrst few layers to map the
+normally distributed z’s to the latent values (like digit identity, stroke weight,
+angle, etc.) with exactly the right statistics. Then it can use later layers to
+map those latent values to a fully-rendered digit. In general, we don’t
+need to worry about ensuring that the latent structure exists. If such latent
+structure helps the model accurately reproduce (i.e. maximize the likelihood
+of) the training set, then the network will learn that structure at some layer.
+Now all that remains is to maximize Equation 1, where P(z) =N(zj0,I).
+As is common in machine learning, if we can ﬁnd a computable formula
+forP(X), and we can take the gradient of that formula, then we can opti-
+1In one dimension, you can use the inverse cumulative distribution function (CDF) of
+the desired distribution composed with the CDF of a Gaussian. This is an extension of
+“inverse transform sampling.” For multiple dimensions, do the stated process starting with
+the marginal distribution for a single dimension, and repeat with the conditional distribution
+of each additional dimension. See the “inversion method” and the “conditional distribution
+method” in Devroye et al. [15]
+6
+mize the model using stochastic gradient ascent. It is actually conceptually
+straightforward to compute P(X)approximately: we ﬁrst sample a large
+number of zvaluesfz1, ...,zng, and compute P(X)1
+nåiP(Xjzi). The prob-
+lem here is that in high dimensional spaces, nmight need to be extremely
+large before we have an accurate estimate of P(X). To see why, consider
+our example of handwritten digits. Say that our digit datapoints are stored
+in pixel space, in 28x28 images as shown in Figure 3. Since P(Xjz)is an
+isotropic Gaussian, the negative log probability of Xis proportional squared
+Euclidean distance between f(z)and X. Say that Figure 3(a) is the target
+(X) for which we are trying to ﬁnd P(X). A model which produces the
+image shown in Figure 3(b) is probably a bad model, since this digit is not
+much like a 2. Hence, we should set the shyperparameter of our Gaussian
+distribution such that this kind of erroneous digit does not contribute to
+P(X). On the other hand, a model which produces Figure 3(c) (identical to
+Xbut shifted down and to the right by half a pixel) might be a good model.
+We would hope that this sample would contribute to P(X). Unfortunately,
+however, we can’t have it both ways: the squared distance between Xand
+Figure 3(c) is .2693 (assuming pixels range between 0 and 1), but between
+Xand Figure 3(b) it is just .0387. The lesson here is that in order to reject
+samples like Figure 3(b), we need to set svery small, such that the model
+needs to generate something signiﬁcantly more like Xthan Figure 3(c)! Even
+if our model is an accurate generator of digits, we would likely need to
+sample many thousands of digits before we produce a 2 that is sufﬁciently
+similar to the one in Figure 3(a). We might solve this problem by using
+a better similarity metric, but in practice these are difﬁcult to engineer in
+complex domains like vision, and they’re difﬁcult to train without labels
+that indicate which datapoints are similar to each other. Instead, VAEs alter
+the sampling procedure to make it faster, without changing the similarity
+metric.
+2.1 Setting up the objective
+Is there a shortcut we can take when using sampling to compute Equation 1?
+In practice, for most z,P(Xjz)will be nearly zero, and hence contribute
+almost nothing to our estimate of P(X). The key idea behind the variational
+autoencoder is to attempt to sample values of zthat are likely to have
+produced X, and compute P(X)just from those. This means that we need a
+new function Q(zjX)which can take a value of Xand give us a distribution
+over zvalues that are likely to produce X. Hopefully the space of zvalues
+that are likely under Qwill be much smaller than the space of all z’s that are
+likely under the prior P(z). This lets us, for example, compute EzQP(Xjz)
+relatively easily. However, if zis sampled from an arbitrary distribution
+7
+with PDF Q(z), which is notN(0,I), then how does that help us optimize
+P(X)? The ﬁrst thing we need to do is relate EzQP(Xjz)and P(X). We’ll
+see where Qcomes from later.
+The relationship between EzQP(Xjz)and P(X)is one of the corner-
+stones of variational Bayesian methods. We begin with the deﬁnition of
+Kullback-Leibler divergence (KL divergence or D) between P(zjX)and
+Q(z), for some arbitrary Q(which may or may not depend on X):
+D[Q(z)kP(zjX)]=EzQ[logQ(z) logP(zjX)]. (2)
+We can get both P(X)and P(Xjz)into this equation by applying Bayes rule
+toP(zjX):
+D[Q(z)kP(zjX)]=EzQ[logQ(z) logP(Xjz) logP(z)]+logP(X).
+(3)
+Here, logP(X)comes out of the expectation because it does not depend on
+z. Negating both sides, rearranging, and contracting part of EzQinto a
+KL-divergence terms yields:
+logP(X) D[Q(z)kP(zjX)]=EzQ[logP(Xjz)] D[Q(z)kP(z)]. (4)
+Note that Xis ﬁxed, and Qcan be anydistribution, not just a distribution
+which does a good job mapping Xto the z’s that can produce X. Since we’re
+interested in inferring P(X), it makes sense to construct a Qwhich does
+depend on X, and in particular, one which makes D[Q(z)kP(zjX)]small:
+logP(X) D[Q(zjX)kP(zjX)]=EzQ[logP(Xjz)] D[Q(zjX)kP(z)].
+(5)
+This equation serves as the core of the variational autoencoder, and it’s
+worth spending some time thinking about what it says2. In two sentences,
+the left hand side has the quantity we want to maximize: logP(X)(plus
+an error term, which makes Qproduce z’s that can reproduce a given X;
+this term will become small if Qis high-capacity). The right hand side
+is something we can optimize via stochastic gradient descent given the
+right choice of Q(although it may not be obvious yet how). Note that the
+framework—in particular, the right hand side of Equation 5—has suddenly
+taken a form which looks like an autoencoder, since Qis “encoding” Xinto
+z, and Pis “decoding” it to reconstruct X. We’ll explore this connection in
+more detail later.
+2Historically, this math (particularly Equation 5) was known long before VAEs. For
+example, Helmholtz Machines [16] (see Equation 5) use nearly identical mathematics, with
+one crucial difference. The integral in our expectations is replaced with a sum in Dayan et
+al. [16], because Helmholtz Machines assume a discrete distribution for the latent variables.
+This choice prevents the transformations that make gradient descent tractable in VAEs.
+8
+Now for a bit more detail on Equatinon 5. Starting with the left hand side,
+we are maximizing logP(X)while simultaneously minimizing D[Q(zjX)kP(zjX)].
+P(zjX)is not something we can compute analytically: it describes the val-
+ues of zthat are likely to give rise to a sample like Xunder our model in
+Figure 1. However, the second term on the left is pulling Q(zjx)to match
+P(zjX). Assuming we use an arbitrarily high-capacity model for Q(zjx),
+then Q(zjx)will hopefully actually match P(zjX), in which case this KL-
+divergence term will be zero, and we will be directly optimizing logP(X).
+As an added bonus, we have made the intractable P(zjX)tractable: we can
+just use Q(zjx)to compute it.
+2.2 Optimizing the objective
+So how can we perform stochastic gradient descent on the right hand
+side of Equation 5? First we need to be a bit more speciﬁc about the
+form that Q(zjX)will take. The usual choice is to say that Q(zjX) =
+N(zjm(X;J),S(X;J)), where mandSare arbitrary deterministic functions
+with parameters Jthat can be learned from data (we will omit Jin later
+equations). In practice, mandSare again implemented via neural networks,
+andSis constrained to be a diagonal matrix. The advantages of this choice
+are computational, as they make it clear how to compute the right hand
+side. The last term— D[Q(zjX)kP(z)]—is now a KL-divergence between
+two multivariate Gaussian distributions, which can be computed in closed
+form as:
+D[N(m0,S0)kN(m1,S1)] =
+1
+2
+tr
+S 1
+1S0
++(m1 m0)>S 1
+1(m1 m0) k+log
+detS1
+detS0
+(6)
+where kis the dimensionality of the distribution. In our case, this simpliﬁes
+to:
+D[N(m(X),S(X))kN(0,I)] =
+1
+2
+tr(S(X))+(m(X))>(m(X)) k log det (S(X))
+.
+(7)
+The ﬁrst term on the right hand side of Equation 5 is a bit more tricky.
+We could use sampling to estimate EzQ[logP(Xjz)], but getting a good
+estimate would require passing many samples of zthrough f, which would
+be expensive. Hence, as is standard in stochastic gradient descent, we
+take one sample of zand treat logP(Xjz)for that zas an approximation
+ofEzQ[logP(Xjz)]. After all, we are already doing stochastic gradient
+descent over different values of Xsampled from a dataset D. The full
+9
+Encoder  
+(   ) 
+Decoder  
+(   ) 
+Sample    from  
+Encoder  
+(   ) 
+Decoder  
+(   ) 
+Sample    from  
+* + Figure 4: A training-time variational autoencoder implemented as a feed-
+forward neural network, where P(Xjz)is Gaussian. Left is without the
+“reparameterization trick”, and right is with it. Red shows sampling opera-
+tions that are non-differentiable. Blue shows loss layers. The feedforward
+behavior of these networks is identical, but backpropagation can be applied
+only to the right network.
+equation we want to optimize is:
+EXD[logP(X) D[Q(zjX)kP(zjX)]]=
+EXD[EzQ[logP(Xjz)] D[Q(zjX)kP(z)]].
+(8)
+If we take the gradient of this equation, the gradient symbol can be moved
+into the expectations. Therefore, we can sample a single value of Xand a
+single value of zfrom the distribution Q(zjX), and compute the gradient of:
+logP(Xjz) D[Q(zjX)kP(z)]. (9)
+We can then average the gradient of this function over arbitrarily many
+samples of Xand z, and the result converges to the gradient of Equation 8.
+There is, however, a signiﬁcant problem with Equation 9. EzQ[logP(Xjz)]
+depends not just on the parameters of P, but also on the parameters of Q.
+However, in Equation 9, this dependency has disappeared! In order to make
+VAEs work, it’s essential to drive Qto produce codes for Xthat Pcan reliably
+decode. To see the problem a different way, the network described in Equa-
+tion 9 is much like the network shown in Figure 4 (left). The forward pass of
+this network works ﬁne and, if the output is averaged over many samples
+ofXand z, produces the correct expected value. However, we need to
+10
+Decoder  
+(   ) 
+Sample    from  
+Figure 5: The testing-time variational “autoencoder,” which allows us to
+generate new samples. The “encoder” pathway is simply discarded.
+back-propagate the error through a layer that samples zfrom Q(zjX), which
+is a non-continuous operation and has no gradient. Stochastic gradient
+descent via backpropagation can handle stochastic inputs, but not stochastic
+units within the network! The solution, called the “reparameterization trick”
+in [1], is to move the sampling to an input layer. Given m(X)andS(X)—the
+mean and covariance of Q(zjX)—we can sample from N(m(X),S(X))by
+ﬁrst sampling eN(0,I), then computing z=m(X) +S1/2(X)e. Thus,
+the equation we actually take the gradient of is:
+EXDh
+EeN(0,I)[logP(Xjz=m(X) +S1/2(X)e)] D[Q(zjX)kP(z)]i
+.
+(10)
+This is shown schematically in Figure 4 (right). Note that none of the
+expectations are with respect to distributions that depend on our model
+parameters, so we can safely move a gradient symbol into them while main-
+taning equality. That is, given a ﬁxed Xande, this function is deterministic
+and continuous in the parameters of Pand Q, meaning backpropagation
+can compute a gradient that will work for stochastic gradient descent. It’s
+worth pointing out that the “reparameterization trick” only works if we can
+sample from Q(zjX)by evaluating a function h(h,X), where his noise from
+a distribution that is not learned. Furthermore, hmust be continuous inXso
+that we can backprop through it. This means Q(zjX)(and therefore P(z))
+can’t be a discrete distribution! If Qis discrete, then for a ﬁxed h, either h
+needs to ignore X, or there needs to be some point at which h(h,X)“jumps”
+from one possible value in Q’s sample space to another, i.e., a discontinuity.
+2.3 Testing the learned model
+At test time, when we want to generate new samples, we simply input
+values of zN(0,I)into the decoder. That is, we remove the “encoder,”
+including the multiplication and addition operations that would change the
+11
+distribution of z. This (remarkably simple) test-time network is shown in
+Figure 5.
+Say that we want to evaluate the probability of a testing example un-
+der the model. This is, in general, not tractable. Note, however, that
+D[Q(zjX)kP(zjX)]is positive, meaning that the right hand side of Equa-
+tion 5 is a lower bound to P(X). This lower bound still can’t quite be
+computed in closed form due to the expectation over z, which requires sam-
+pling. However, sampling zfrom Qgives an estimator for the expectation
+which generally converges much faster than sampling zfromN(0,I)as dis-
+cussed in section 2. Hence, this lower bound can be a useful tool for getting
+a rough idea of how well our model is capturing a particular datapoint X.
+2.4 Interpreting the objective
+By now, you are hopefully convinced that the learning in VAEs is tractable,
+and that it optimizes something like logP(X)across our entire dataset. How-
+ever, we are not optimizing exactly logP(X), so this section aims to take a
+deeper look at what the objective function is actually doing. We address
+three topics. First, we ask how much error is introduced by optimizing
+D[Q(zjX)kP(zjX)]in addition to logP(X). Second, we describe the VAE
+framework—especially the r.h.s. of Equation 5—in terms of information the-
+ory, linking it to other approaches based on Minimum Description Length.
+Finally, we investigate whether VAEs have “regularization parameters” anal-
+ogous to the sparsity penalty in sparse autoencoders.
+2.4.1 The error from D[Q(zjX)kP(zjX)]
+The tractability of this model relies on our assumption that Q(zjX)can be
+modeled as a Gaussian with some mean m(X)and variance S(X).P(X)con-
+verges (in distribution) to the true distribution if and only if D[Q(zjX)kP(zjX)]
+goes to zero. Unfortunately, it’s not straightforward to ensure that this hap-
+pens. Even if we assume m(X)andS(X)are arbitrarily high capacity, the
+posterior P(zjX)is not necessarily Gaussian for an arbitrary ffunction that
+we’re using to deﬁne P. For ﬁxed P, this might mean that D[Q(zjX)kP(zjX)]
+never goes to zero. However, the good news is that given sufﬁciently high-
+capacity neural networks, there are many ffunctions that result in our
+model generating any given output distribution. Any of these functions will
+maximize logP(X)equally well. Hence, all we need is one function fwhich
+both maximizes logP(X)andresults in P(zjX)being Gaussian for all X. If
+so,D[Q(zjX)kP(zjX)]will pull our model towards that parameterization of
+the distribution. So, does such a function exist for all distributions we might
+want to approximate? I’m not aware of anyone proving this in general just
+12
+yet, but it turns out that one can prove that such a function does exist, pro-
+vided sis small relative to the curvature of the ground truth distribution’s
+CDF (at least in 1D; a proof is included in Appendix A). In practice such
+a small smight cause problems for existing machine learning algorithms,
+since the gradients would become badly scaled. However, it is comforting to
+know that VAEs have zero approximation error in at least this one scenario.
+This fact suggests that future theoretical work may show us how much
+approximation error VAEs have in more practical setups. (It seems to me
+like it should be possible to extend the proof technique in Appendix A to
+multiple dimensions, but this is left for future work.)
+2.4.2 The information-theoretic interpretation
+Another important way to look at the right hand side of Equation 5 is
+in terms of information theory, and in particular, the “minimum descrip-
+tion length” principle which motivated many of the VAE’s predecessors
+like Helmholtz Machines [ 16], the Wake-Sleep Algorithm [ 17], Deep Belief
+Nets [ 18], and Boltzmann Machines [ 19]. logP(X)can be seen as the total
+number of bits required to construct a given Xunder our model using an
+ideal encoding. The right hand side of Equation 5 views this as a two-step
+process to construct X. We ﬁrst use some bits to construct z. Recall that
+a KL-divergence is in units of bits (or, more precisely, nats). Speciﬁcally,
+D[Q(zjX)jjP(z)]is the expected information that’s required to convert an
+uninformative sample from P(z)into a sample from Q(zjX)(the so-called
+“information gain” interpretation of KL-divergence). That is, it measures
+the amount of extra information that we get about Xwhen zcomes from
+Q(zjX)instead of from P(z)(for more details, see the “bits back” argument
+of [20,21]). In the second step, P(Xjz)measures the amount of information
+required to reconstruct Xfrom zunder an ideal encoding. Hence, the total
+number of bits ( logP(X)) is the sum of these two steps, minus a penalty
+we pay for Qbeing a sub-optimal encoding ( D[Q(zjX)jjP(zjX)]).
+2.4.3 VAEs and the regularization parameter
+Looking at Equation 5, it’s interesting to view the D[Q(zjX)jjP(z)]as a
+regularization term, much like the sparsity regularization in sparse au-
+toencoders [ 10]. From this standpoint, it’s interesting to ask whether the
+variational autoencoder has any “regularization parameter.” That is, in the
+sparse autoencoder objective, we have a lregularization parameter in an
+objective function that looks something like this:
+kf(y(X)) Xk2+lky(X)k0 (11)
+13
+where yandfare the encoder and decoder functions, respectively, and
+kk 0is an L0norm that encourages the encoding to be sparse. This lmust
+be set by hand.
+A variational autoencoder, however, does not, in general, have such a
+regularization parameter, which is good because that’s one less parameter
+that the programmer needs to adjust. However, for certain models, we can
+make it appear like such a regularization parameter exists. It’s tempting to
+think that this parameter can come from changing zN(0,I)to something
+likez0N(0,lI), but it turns out that this doesn’t change the model. To
+see this, note that we can absorb this constant into Pand Qby writing them
+in terms of f0(z0) = f(z0/l),m0(X) =m(X)l, and S0(X) =S(X)l2.
+This will produce an objective function whose value (right hand side of
+Equation 5) is identical to the loss we had with zN(0,I). Also, the model
+for sampling Xwill be identical, since z0/lN(0,I).
+However, there is another place where a regularization parameter can
+come from. Recall that a good choice for the output distribution for con-
+tinuous data is P(Xjz)N(f(z),s2I)for some swe supply. Therefore,
+logP(Xjz) = C 1
+2kX f(z)k2/s2(where Cis a constant that does not
+depend on f, and can be ignored during optimization). When we write the
+full optimization objective, sappears in the second term on the r.h.s. of
+Equation 5, but not the ﬁrst; in this sense, the swe choose behaves like a l
+controlling the weighting of the two terms. Note, however, that the existence
+of this parameter relies on our choice of the distribution of Xgiven z. If
+Xis binary and we use a Bernoulli output model, then this regularization
+parameter disappears, and the only way to bring it back is to use hacks like
+replicating the dimensions of X. From an information theory standpoint,
+this makes sense: when Xis binary, we can actually count the number of
+bits that are required to encode X, and both terms on the right hand side of
+Equation 5 are using the same units to count these bits. However, when X
+is continuous, each sample contains inﬁnite information. Our choice of s
+determines how accurately we expect the model to reconstruct X, which is
+necessary so that the information content can become ﬁnite.
+3 Conditional Variational Autoencoders
+Let’s return to our running example of generating handwritten digits. Say
+that we don’t just want to generate new digits, but instead we want to add
+digits to an existing string of digits written by a single person. This is similar
+to a truly practical problem in computer graphics called hole ﬁlling: given
+an existing image where a user has removed an unwanted object, the goal
+is to ﬁll in the hole with plausible-looking pixels. An important difﬁculty
+14
+Encoder  
+(   ) 
+Decoder  
+(   ) 
+Sample    from  
+* + 
+Decoder  
+(   ) 
+Sample    from  
+Figure 6: Left: a training-time conditional variational autoencoder imple-
+mented as a feedforward neural network, following the same notation as
+Figure 4. Right: the same model at test time, when we want to sample from
+P(YjX).
+with both problems is that the space of plausible outputs is multi-modal :
+there are many possibilities for the next digit or the extrapolated pixels. A
+standard regression model will fail in this situation, because the training
+objective generally penalizes the distance between a single prediction and
+the ground truth. Faced with a problem like this, the best solution the
+regressor can produce is something which is in between the possibilities,
+since it minimizes the expected distance. In the case of digits, this will most
+likely look like a meaningless blur that’s an “average image” of all possible
+digits and all possible styles that could occur3. What we need is an algorithm
+that takes in a string or an image, and produces a complex, multimodal
+distribution that we can sample from. Enter the conditional variational
+autoencoder (CVAE) [ 7,8], which modiﬁes the math in the previous section
+by simply conditioning the entire generative process on an input. CVAEs
+allow us to tackle problems where the input-to-output mapping is one-to-
+many4, without requiring us to explicitly specify the structure of the output
+3The denoising autoencoder [ 12,13] can be seen as a slight generalization of the regres-
+sion model, which might improve on its behavior. That is, we would say that the “noise
+distribution” simply deletes pixels, and so the denoising autoencoder must reconstruct
+the original image given the noisy version. Note, however, that this still doesn’t solve the
+problem. The standard denoising autoencoder still requires that the conditional distribution
+of the original sample given the noisy sample follow a simple, parametric distribution. This
+is not the case for complex data like image patches.
+4Often called “structured prediction” in machine learning literature.
+15
+distribution.
+Given an input Xand an output Y, we want to create a model P(YjX)
+which maximizes the probability of the ground truth (I apologize for re-
+deﬁning Xhere. However, standard machine learning notation maps X
+toY, so I will too). We deﬁne the model by introducing a latent variable
+zN(0,I), such that:
+P(YjX) =N(f(z,X),s2I) (12)
+where fis a deterministic function that we can learn from data. We can
+rewrite Equations 2 through 5 conditioning on Xas follows:
+D[Q(zjY,X)kP(zjY,X)]=EzQ(jY,X)[logQ(zjY,X) logP(zjY,X)]
+(13)
+D[Q(zjY,X)kP(zjY,X)]=
+EzQ(jY,X)[logQ(zjY,X) logP(Yjz,X) logP(zjX)]+logP(YjX)
+(14)
+logP(YjX) D[Q(zjY,X)kP(zjY,X)]=
+EzQ(jY,X)[logP(Yjz,X)] D[Q(zjY,X)kP(zjX)]
+(15)
+Note that P(zjX)is stillN(0,I)because our model assumes zis sampled
+independently of Xat test time. The structure of this model is shown in
+Figure 6.
+At test time, we can sample from the distribution P(YjX)by simply
+sampling zN(0,I).
+4 Examples
+Implementations for these examples using Caffe [ 22] can be found online at:
+http://github.com/cdoersch/vae_tutorial
+4.1 MNIST variational autoencoder
+To demonstrate the distribution learning capabilities of the VAE framework,
+let’s train a variational autoencoder on MNIST. To show that the framework
+isn’t heavily dependent on initialization or network structure, we don’t
+use existing published VAE network structures, but instead adapt the basic
+MNIST AutoEncoder example that’s included with Caffe [ 22]. (However,
+we use ReLU non-linearities [ 9] and ADAM [ 23], since both are standard
+techniques to speed convergence.) Although MNIST is real-valued, it is
+16
+Figure 7: Samples from a VAE trained on MNIST.
+constrained between 0 and 1, so we use the Sigmoid Cross Entropy loss
+forP(Xjz). This has a probabilistic interpretation: imagine that we cre-
+ated a new datapoint X0by independently sampling each dimension as
+X0
+iBernoulli (Xi). Cross entropy measures the expected probability of X0.
+Thus we’re actually modeling X0, the randomly binarized version of MNIST,
+but we’re only giving qa summary of this data X. Admittedly this is not
+quite what the VAE framework prescribes but works well in practice, and
+is used in other VAE literature [ 6]. Even though our model is considerably
+deeper than [ 1] and [ 3], training the model was not difﬁcult. The training
+was run to completion exactly once (though the training was re-started the
+5 times to ﬁnd the learning rate which made the loss descend the fastest).
+Digits generated from noise are shown in Figure 7. It’s worth noting that
+these samples are difﬁcult to evaluate since there’s no simple way to mea-
+sure how different these are from the training set [ 24]. However, the failure
+cases are interesting: while most of the digits look quite realistic, a signif-
+icant number are ‘in-between’ different digits. For example, the seventh
+digit from the top in the leftmost column is clearly in-between a 7 and a 9.
+This happens because we are mapping a continuous distribution through a
+smooth function.
+In practice, the model seems to be quite insensitive to the dimensionality
+ofz, unless zis excessively large or small. Too few z’s means the model can
+17
+(a) CVAE
+(b) Regressor
+(c) Ground Truth
+Figure 8: Samples from a CVAE trained on MNIST. The input that the model
+is conditioning on is the central column, highlighted in blue and orange in
+the top two images. The model must complete the digit given only these
+noisy binary values. The three sets above are aligned spatially, so you can
+compare the generated images to the ground truth.
+no longer capture all of the variation: less than 4 zdimensions produced
+noticeably worse results. Results with 1,000 z’s were good, but with 10,000
+they were also degraded. In theory, if a model with n z’s is good, then a
+model with m>> nshould not be worse, since the model can simply learn
+to ignore the extra dimensions. However, in practice, it seems stochastic
+gradient descent struggles to keep D[Q(zjX)jjP(z)]low when zis extremely
+large.
+18
+5 MNIST conditional variational autoencoder
+I had originally intended to show a conditional variational autoencoder
+completing MNIST digits given only half of each digit. While a CVAE works
+quite well for this purpose, unfortunately a regressor actually works quite
+well also, producing relatively crisp samples. The apparent reason is the size
+of MNIST. A network with similar capacity to the one in section 4.1 can easily
+memorize the entire dataset, and so the regressor overﬁts badly. Thus, at test
+time, it produces predictions that behave something like nearest-neighbor
+matching, which are actually quite sharp. CVAE models are most likely
+to outperform simple regression when the output is ambiguous given a
+training example. Therefore, let’s make two modiﬁcations to the problem to
+make it more ambiguous, at the cost of making it somewhat more artiﬁcial.
+First, the input is a single column of pixels taken from the middle of the digit.
+In MNIST, each pixel has a value between 0 and 1, meaning that there is still
+enough information even in this single column of pixels for the network to
+identify a speciﬁc training example. Therefore, the second modiﬁcation is to
+replace each pixel in our column with a binary value (0 or 1), choosing 1 with
+probability equal to the pixel intensity. These binary values were resampled
+each time a digit was passed to the network. Figure 8 shows the results.
+Note that the regressor model handles the ambiguity by blurring its output
+(although there are cases where the regressor is suspiciously conﬁdent when
+making wrong guesses, suggesting overﬁtting is still an issue). The blur in
+the regressor’s output minimizes the distance to the set of many digits which
+might have produced the input. The CVAE, on the other hand, generally
+picks a speciﬁc digit to output and does so without blur, resulting in more
+believable images.
+Acknowledgements: Thanks to everyone in the UCB CS294 Visual Ob-
+ject And Activity Recognition group and CMU Misc-Read group, and to
+many others who encouraged me to convert the presentation I gave there
+into a tutorial. I would especially like to thank Philipp Krähenbühl, Jacob
+Walker, and Deepak Pathak for helping me formulate and reﬁne my de-
+scription of the method, and Kenny Marino for help editing. I also thank
+Abhinav Gupta and Alexei Efros for helpful discussions and support, and
+Google for their fellowship supporting my research.
+A Proof in 1D that VAEs have zero approximation er-
+ror given arbitrarily powerful learners.
+LetPgt(X)be a 1D distribution that we are trying to approximate using
+a VAE. We assume that Pgt(X)>0everywhere, that it is inﬁnitely dif-
+19
+ferentiable, and all the derivatives are bounded. Recall that a variational
+autoencoder optimizes
+logPs(X) D[Qs(zjX)kPs(zjX)] (16)
+where Ps(Xjz) =N(Xjf(z),s2)forzN(0, 1),Ps(X) =R
+zPs(Xjz)P(z)dz,
+and Qs(zjX) =N(zjms(X),Ss(X)). We make the dependence on sexplicit
+here since we will send it to 0 to prove convergence. The theoretical best pos-
+sible solution is where Ps=PgtandD[Qs(zjX)kPs(zjX)] = 0. By “arbitrar-
+ily powerful” learners, we mean that if there exist f,mandSwhich achieve
+this best possible solution, then the learning algorithm will ﬁnd them. Hence,
+we must merely show that such an f,ms, and Ssexist. First off, Pgtcan
+actually be described arbitrarily well as Pgt(X) =R
+zN(Xjf(z),s2)P(z)dzas
+sapproaches 0. To show this, let Fbe the cumulative distribution function
+(CDF) of Pgt, and let Gbe the CDF ofN(0, 1), which are both guaranteed
+to exist. Then G(z)is distributed Uni f (0, 1)(the uniform distribution), and
+therefore f(z) =F 1(G(z))is distributed Pgt(X). This means that as s!0,
+the distribution P(X)converges to Pgt.
+From here, we must simply show that D[Qs(zjX)kPs(zjX)]!0as
+s!0. Let g(X) = G 1(F(X)), i.e., the inverse of f, and let Qs(zjX) =
+N(zjg(X),(g0(X)s)2). Note thatD[Qs(zjX)jjPs(zjX)]is invariant to
+afﬁne transformations of the sample space. Hence, let Q0(z0jX) =N(z0jg(X),g0(X)2)
+and P0
+s(z0jX) = Ps(z=g(X) + ( z0 g(X))sjX)s. When I write
+P(z=...), I am using the PDF of zas a function, and evaluating it at
+some point. Then:
+D[Qs(zjX)kPs(zjX)] =D[Q0(z0jX)kP0
+s(z0jX)] (17)
+where Q0(z0jX)does not depend on s, and its standard deviation is greater
+than 0. Therefore, it is sufﬁcient to show that P0
+s(z0jX)!Q0(z0jX)for all z.
+Letr=g(X) + ( z0 g(X))s. Then:
+P0
+s(z0jX) = Ps(z=rjX=X)s
+=Ps(X=Xjz=r)P(z=r)s
+Ps(X=X).(18)
+Here, Ps(X)!Pgt(X)ass!0, which is a constant, and r!g(X)as
+s!0, soP(r)also tends to a constant. Together with s, they ensure that
+the whole distribution normalizes. We will wrap them both in the constant
+C.
+=CN(Xjf(g(X) + ( z0 g(X))s),s2). (19)
+20
+Next, we do a Taylor expansion of faround g(X):
+=CN 
+XX+f0(g(X))(z0 g(X))s+¥
+å
+n=2f(n)(g(X))((z0 g(X))s)n
+n!,s2!
+.
+(20)
+Note thatN(Xjm,s) = (p
+2ps) 1exp (x m)2
+2s2
+. We rewrite the above
+using this formula, rearrange terms, and re-write the result as a Gaussian to
+obtain:
+=Cf0(g(X))
+sN 
+z0g(X) ¥
+å
+n=2f(n)(g(X))((z0 g(X))s)n
+n!f0(g(X))s,1
+f0(g(X))2!
+.
+(21)
+Note 1/f0(g(X)) = g0(X), since f=g 1. Furthermore, since f(n)is
+bounded for all n, all terms in the sum tend to 0 as s!0.Cmust make the
+distribution normalize, so we have that the above expression:
+!N 
+z0jg(X),g0(X)2=Q0(z0jX) (22)
+Looking at Equation 21, the bulk of the approximation error in this setup
+comes from the curvature of g, which is mostly determined by the curvature
+of the c.d.f. of the ground truth distribution.
+References
+1.Diederik P Kingma and Max Welling. Auto-encoding variational Bayes.
+ICLR , 2014.
+2.Tim Salimans, Diederik Kingma, and Max Welling. Markov chain monte
+carlo and variational inference: Bridging the gap. ICML , 2015.
+3.Danilo Jimenez Rezende, Shakir Mohamed, and Daan Wierstra. Stochas-
+tic backpropagation and approximate inference in deep generative mod-
+els. In ICML , 2014.
+4.Tejas D Kulkarni, William F. Whitney, Pushmeet Kohli, and Josh Tenen-
+baum. Deep convolutional inverse graphics network. In NIPS , 2015.
+5.Diederik P Kingma, Shakir Mohamed, Danilo Jimenez Rezende, and
+Max Welling. Semi-supervised learning with deep generative models.
+InNIPS , 2014.
+6.Karol Gregor, Ivo Danihelka, Alex Graves, Danilo Rezende, and Daan
+Wierstra. Draw: A recurrent neural network for image generation. In
+ICCV , 2015.
+21
+7.Kihyuk Sohn, Honglak Lee, and Xinchen Yan. Learning structured
+output representation using deep conditional generative models. In
+NIPS , 2015.
+8.Jacob Walker, Carl Doersch, Abhinav Gupta, and Martial Hebert. An
+uncertain future: Forecasting from static images using variational au-
+toencoders. In ECCV , 2016.
+9.Alex Krizhevsky, Ilya Sutskever, and Geoff Hinton. Imagenet classiﬁca-
+tion with deep convolutional neural networks. In NIPS , 2012.
+10.Bruno A Olshausen and David J Field. Emergence of simple-cell recep-
+tive ﬁeld properties by learning a sparse code for natural images. Nature ,
+381(6583):607–609, 1996.
+11.Honglak Lee, Alexis Battle, Rajat Raina, and Andrew Y Ng. Efﬁcient
+sparse coding algorithms. In NIPS , 2006.
+12.Pascal Vincent, Hugo Larochelle, Yoshua Bengio, and Pierre-Antoine
+Manzagol. Extracting and composing robust features with denoising
+autoencoders. In ICML , 2008.
+13.Yoshua Bengio, Eric Thibodeau-Laufer, Guillaume Alain, and Jason
+Yosinski. Deep generative stochastic networks trainable by backprop.
+ICML , 2014.
+14.Yoshua Bengio, Li Yao, Guillaume Alain, and Pascal Vincent. Gener-
+alized denoising auto-encoders as generative models. In NIPS , pages
+899–907, 2013.
+15.Luc Devroye. Sample-based non-uniform random variate generation .
+Springer-Verlag, New York, 1986.
+16.Peter Dayan, Geoffrey E Hinton, Radford M Neal, and Richard S Zemel.
+The helmholtz machine. Neural computation , 7(5):889–904, 1995.
+17.Geoffrey E Hinton, Peter Dayan, Brendan J Frey, and Radford M Neal.
+The" wake-sleep" algorithm for unsupervised neural networks. Science ,
+268(5214):1158–1161, 1995.
+18.Geoffrey E Hinton, Simon Osindero, and Yee-Whye Teh. A fast learning
+algorithm for deep belief nets. Neural computation , 18(7):1527–1554, 2006.
+19.Ruslan Salakhutdinov and Geoffrey E Hinton. Deep boltzmann ma-
+chines. In International conference on artiﬁcial intelligence and statistics ,
+pages 448–455, 2009.
+20.Geoffrey E Hinton and Drew Van Camp. Keeping the neural networks
+simple by minimizing the description length of the weights. In Pro-
+ceedings of the sixth annual conference on Computational learning theory ,
+1993.
+22
+21.Geoffrey E Hinton and Richard S Zemel. Autoencoders, minimum
+description length, and helmholtz free energy. In NIPS , 1994.
+22.Yangqing Jia, Evan Shelhamer, Jeff Donahue, Sergey Karayev, Jonathan
+Long, Ross Girshick, Sergio Guadarrama, and Trevor Darrell. Caffe:
+Convolutional architecture for fast feature embedding. In ACM-MM ,
+2014.
+23.Diederik Kingma and Jimmy Ba. Adam: A method for stochastic opti-
+mization. ICLR , 2015.
+24.Lucas Theis, Aäron van den Oord, and Matthias Bethge. A note on the
+evaluation of generative models. ICLR , 2016.
+23

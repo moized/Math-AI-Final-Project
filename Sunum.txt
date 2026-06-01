@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAE ile Latent Manifold Analizi - Final Projesi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #fff;
+            height: 100vh;
+            overflow: hidden; /* Prevent default page scrolling */
+        }
+
+        /* Container for the sliding effect */
+        .slider-wrapper {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1); /* Smooth ease-out slide */
+        }
+        
+        .slide {
+            min-width: 100vw; /* Occupy full viewport width */
+            height: 100vh;
+            padding: 40px 80px; /* Reduced padding slightly to fit content better */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            overflow-y: auto; /* Allow scrolling inside slide if content is too tall */
+        }
+        
+        .slide-number {
+            position: absolute;
+            bottom: 20px;
+            right: 40px;
+            font-size: 14px;
+            color: rgba(255,255,255,0.4);
+        }
+        
+        /* Title Slide */
+        .title-slide {
+            text-align: center;
+            background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+        }
+
+        .logo {
+            width: 140px;
+            height: 140px;
+            object-fit: contain;
+            margin: 0 auto 25px auto;
+            filter: drop-shadow(0 10px 25px rgba(0,0,0,0.4));
+        }
+        
+        .title-slide h1 {
+            font-size: 3.5rem;
+            margin-bottom: 30px;
+            background: linear-gradient(90deg, #e94560, #f39c12, #3498db);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .title-slide .subtitle {
+            font-size: 1.5rem;
+            color: #a0a0a0;
+            margin-bottom: 25px;
+        }
+
+        .title-slide .course {
+            font-size: 1.2rem;
+            color: #e0e0e0;
+            margin-bottom: 35px;
+        }
+        
+        .title-slide .info {
+            font-size: 1.2rem;
+            color: #3498db;
+        }
+        
+        .title-slide .info span {
+            display: block;
+            margin: 10px 0;
+        }
+        
+        /* Regular slides */
+        h2 {
+            font-size: 2.5rem;
+            margin-bottom: 30px;
+            color: #e94560;
+            border-left: 5px solid #e94560;
+            padding-left: 20px;
+        }
+        
+        h3 {
+            font-size: 1.5rem;
+            color: #f39c12;
+            margin: 25px 0 15px 0;
+        }
+        
+        p {
+            font-size: 1.15rem;
+            line-height: 1.6;
+            color: #e0e0e0;
+            margin-bottom: 15px;
+        }
+        
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        li {
+            font-size: 1.2rem;
+            margin: 15px 0;
+            padding-left: 40px;
+            position: relative;
+            color: #e0e0e0;
+        }
+        
+        li::before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #3498db;
+            font-size: 1.5rem;
+        }
+        
+        /* Code blocks */
+        .code-block {
+            background: #0d1117;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+        }
+        
+        .code-block pre {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9rem;
+            color: #c9d1d9;
+            line-height: 1.5;
+        }
+        
+        .keyword { color: #ff7b72; }
+        .function { color: #d2a8ff; }
+        .string { color: #a5d6ff; }
+        .comment { color: #8b949e; }
+        .number { color: #79c0ff; }
+        
+        /* Math formulas */
+        .formula {
+            background: rgba(52, 152, 219, 0.15);
+            border-radius: 10px;
+            padding: 20px 30px;
+            margin: 20px 0;
+            font-size: 1.3rem;
+            text-align: center;
+            border: 1px solid rgba(52, 152, 219, 0.3);
+            font-family: 'Times New Roman', serif;
+            font-style: italic;
+        }
+        
+        /* Images */
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .image-container img {
+            max-width: 90%;
+            max-height: 400px; /* Reduced slightly for fit */
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+        
+        .image-caption {
+            font-size: 0.9rem;
+            color: #888;
+            margin-top: 10px;
+        }
+        
+        /* Two column layout */
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-top: 20px;
+        }
+        
+        .column {
+            padding: 10px;
+        }
+        
+        /* Highlight box */
+        .highlight-box {
+            background: linear-gradient(135deg, rgba(233, 69, 96, 0.2), rgba(52, 152, 219, 0.2));
+            border-radius: 15px;
+            padding: 25px;
+            margin: 20px 0;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        /* Architecture diagram */
+        .architecture {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        
+        .arch-box {
+            background: linear-gradient(135deg, #2d3436, #1e272e);
+            border-radius: 15px;
+            padding: 20px 30px;
+            text-align: center;
+            border: 2px solid #3498db;
+            min-width: 160px;
+        }
+        
+        .arch-box.encoder { border-color: #e94560; }
+        .arch-box.latent { border-color: #f39c12; }
+        .arch-box.decoder { border-color: #2ecc71; }
+        
+        .arch-box h4 {
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+        }
+        
+        .arch-box p {
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+        
+        .arrow {
+            font-size: 2rem;
+            color: #3498db;
+        }
+        
+        /* Thank you slide */
+        .thank-you {
+            text-align: center;
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+        }
+        
+        .thank-you h2 {
+            border: none;
+            font-size: 4rem;
+            background: linear-gradient(90deg, #e94560, #f39c12);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* Results grid */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        .result-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .result-card h4 {
+            color: #f39c12;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+
+        /* Navigation Controls */
+        .nav-button {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: none;
+            padding: 20px 15px;
+            cursor: pointer;
+            z-index: 1000;
+            border-radius: 5px;
+            transition: background 0.3s, transform 0.2s;
+            font-size: 1.5rem;
+        }
+
+        .nav-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-button:active {
+            transform: translateY(-50%) scale(0.95);
+        }
+
+        .prev-btn { left: 10px; }
+        .next-btn { right: 10px; }
+
+        /* Progress Bar */
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #e94560, #f39c12, #3498db);
+            width: 0%;
+            transition: width 0.3s;
+            z-index: 1001;
+        }
+
+        /* Responsive adjustments for mobile */
+        @media (max-width: 768px) {
+            .slide { padding: 40px 20px; }
+            .two-column { grid-template-columns: 1fr; }
+            h2 { font-size: 1.8rem; }
+            .title-slide h1 { font-size: 2.2rem; }
+            .nav-button { padding: 15px 10px; font-size: 1.2rem; }
+            .image-container img { max-height: 250px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navigation Buttons -->
+    <button class="nav-button prev-btn" onclick="moveSlide(-1)">&#10094;</button>
+    <button class="nav-button next-btn" onclick="moveSlide(1)">&#10095;</button>
+    
+    <!-- Progress Bar -->
+    <div class="progress-bar" id="progressBar"></div>
+
+    <div class="slider-wrapper" id="sliderWrapper">
+        <!-- Slide 1: Title -->
+        <div class="slide title-slide">
+            <!-- Replace with actual logo or placeholder -->
+            <div class="logo" style="display:flex; align-items:center; justify-content:center; background: rgba(255,255,255,0.1); border-radius:50%; font-size:2rem; color:#fff;">YTÜ</div>
+            <h1>VAE ile Latent Manifold Analizi</h1>
+            <p class="subtitle">Final Projesi Sunumu</p>
+            <p class="course">Ders: Yapay Zekanın Matematiksel Temelleri</p>
+            <div class="info">
+                <span><strong>Öğrenci:</strong> Mohammed Izedin Mohammed</span>
+                <span><strong>Öğrenci No:</strong> STUDENT_ID_REMOVED</span>
+                <span><strong>Hoca:</strong> Assoc. Prof. Mert BAL</span>
+                <span><strong>Üniversite:</strong> Yıldız Technical University</span>
+                <span><strong>Bölüm:</strong> Veri Bilimi ve Büyük Veri</span>
+                <span><strong>Tarih:</strong> Ocak 2026</span>
+            </div>
+            <div class="slide-number">1 / 12</div>
+        </div>
+
+        <!-- Slide 2: Motivation -->
+        <div class="slide">
+            <h2>Motivasyon ve Amaç</h2>
+            <ul>
+                <li>Yüksek boyutlu veriyi (784-dim MNIST) düşük boyutlu <strong>latent ölçü uzayına</strong> indirgeme</li>
+                <li>VAE ile veri manifoldunun <strong>topolojik yapısını</strong> öğrenme</li>
+                <li><strong>ELBO optimizasyonu</strong> ile olasılıksal modelleme</li>
+                <li>Teorik altyapı ile pratik uygulamayı birleştirme</li>
+            </ul>
+            
+            <div class="highlight-box">
+                <h3>🎯 Hedef</h3>
+                <p>MNIST rakamlarını 2-boyutlu latent uzayda görselleştirerek, VAE'nin veri dağılımını nasıl öğrendiğini göstermek.</p>
+            </div>
+            <div class="slide-number">2 / 12</div>
+        </div>
+
+        <!-- Slide 3: Theory - ELBO -->
+        <div class="slide">
+            <h2>Teorik Çerçeve: ELBO</h2>
+            
+            <p>Amaç, gözlemlenebilir veri <strong>x</strong> için log-olabilirliği maksimize etmek:</p>
+            
+            <div class="formula">
+                log p(x) ≥ 𝔼<sub>q(z|x)</sub>[log p(x|z)] − D<sub>KL</sub>(q(z|x) ∥ p(z))
+            </div>
+            
+            <div class="two-column">
+                <div class="column">
+                    <h3>📐 Jensen Eşitsizliği</h3>
+                    <p>ELBO, Jensen eşitsizliği kullanılarak türetilir. KL ≥ 0 olduğu için, ELBO her zaman log p(x)'in altında kalır.</p>
+                </div>
+                <div class="column">
+                    <h3>🎲 Terimler</h3>
+                    <ul>
+                        <li><strong>Reconstruction:</strong> Veri yeniden oluşturma</li>
+                        <li><strong>KL Divergence:</strong> Latent dağılım düzenlileştirme</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="slide-number">3 / 12</div>
+        </div>
+
+        <!-- Slide 4: Reparameterization -->
+        <div class="slide">
+            <h2>Reparameterization Trick</h2>
+            
+            <p>Stokastik örneklemeyi <strong>türevlenebilir</strong> hale getirmek için:</p>
+            
+            <div class="formula">
+                z = μ + σ ⊙ ε, &nbsp;&nbsp;&nbsp; ε ~ 𝒩(0, I)
+            </div>
+            
+            <div class="highlight-box">
+                <h3>💡 Neden Önemli?</h3>
+                <p>Rastgelelik (ε) ağ parametrelerinden ayrılır. Böylece gradyanlar doğrudan μ ve σ üzerinden akabilir ve backpropagation mümkün olur.</p>
+            </div>
+            
+            <div class="code-block">
+                <pre><span class="keyword">def</span> <span class="function">reparameterize</span>(self, mu, logvar):
+    <span class="comment"># z = μ + σ ⊙ ε,  where ε ~ N(0, I)</span>
+    std = torch.<span class="function">exp</span>(<span class="number">0.5</span> * logvar)
+    eps = torch.<span class="function">randn_like</span>(std)
+    z = mu + eps * std
+    <span class="keyword">return</span> z</pre>
+            </div>
+            <div class="slide-number">4 / 12</div>
+        </div>
+
+        <!-- Slide 5: Architecture -->
+        <div class="slide">
+            <h2>VAE Mimarisi</h2>
+            
+            <div class="architecture">
+                <div class="arch-box encoder">
+                    <h4>Encoder</h4>
+                    <p>784 → 400 → 2</p>
+                    <p style="color: #e94560;">q(z|x)</p>
+                </div>
+                <span class="arrow">→</span>
+                <div class="arch-box latent">
+                    <h4>Latent Space</h4>
+                    <p>μ, log σ²</p>
+                    <p style="color: #f39c12;">2-dim</p>
+                </div>
+                <span class="arrow">→</span>
+                <div class="arch-box decoder">
+                    <h4>Decoder</h4>
+                    <p>2 → 400 → 784</p>
+                    <p style="color: #2ecc71;">p(x|z)</p>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <pre><span class="keyword">class</span> <span class="function">VAE</span>(nn.Module):
+    <span class="keyword">def</span> <span class="function">__init__</span>(self, latent_dim=<span class="number">2</span>):
+        <span class="comment"># Encoder: x → (μ, log σ²)</span>
+        self.encoder = nn.Sequential(nn.Linear(<span class="number">784</span>, <span class="number">400</span>), nn.ReLU())
+        self.fc_mu = nn.Linear(<span class="number">400</span>, latent_dim)
+        self.fc_logvar = nn.Linear(<span class="number">400</span>, latent_dim)
+        <span class="comment"># Decoder: z → x</span>
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, <span class="number">400</span>), nn.ReLU(),
+            nn.Linear(<span class="number">400</span>, <span class="number">784</span>), nn.Sigmoid()
+        )</pre>
+            </div>
+            <div class="slide-number">5 / 12</div>
+        </div>
+
+        <!-- Slide 6: Loss Function -->
+        <div class="slide">
+            <h2>Kayıp Fonksiyonu</h2>
+            
+            <div class="formula">
+                ℒ = BCE(x, x̂) + D<sub>KL</sub>(q(z|x) ∥ 𝒩(0, I))
+            </div>
+            
+            <div class="two-column">
+                <div class="column">
+                    <h3>🔴 Reconstruction (BCE)</h3>
+                    <p>Piksel bazlı Binary Cross-Entropy: Görüntünün ne kadar iyi yeniden oluşturulduğunu ölçer.</p>
+                </div>
+                <div class="column">
+                    <h3>🟢 KL Divergence</h3>
+                    <p>Latent dağılımın Gaussian prior'dan sapmasını ölçer. Kapalı form çözümü vardır.</p>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <pre><span class="keyword">def</span> <span class="function">vae_loss</span>(recon_x, x, mu, logvar):
+    <span class="comment"># Reconstruction Loss</span>
+    recon = F.<span class="function">binary_cross_entropy</span>(recon_x, x, reduction=<span class="string">'sum'</span>)
+    <span class="comment"># KL Divergence (closed form for Gaussian)</span>
+    kl = <span class="number">-0.5</span> * torch.<span class="function">sum</span>(<span class="number">1</span> + logvar - mu.<span class="function">pow</span>(<span class="number">2</span>) - logvar.<span class="function">exp</span>())
+    <span class="keyword">return</span> recon + kl</pre>
+            </div>
+            <div class="slide-number">6 / 12</div>
+        </div>
+
+        <!-- Slide 7: Results - Manifold -->
+        <div class="slide">
+            <h2>Sonuçlar: Latent Manifold</h2>
+            
+            <div class="image-container">
+                <!-- Placeholder for actual image -->
+                <div style="width:100%; height:300px; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px dashed #555;">
+                    <span style="color:#888;">[Image: latent_manifold.png]</span>
+                </div>
+                <p class="image-caption">10.000 test görüntüsünün 2D latent uzaydaki dağılımı (renkler: rakam sınıfları 0-9)</p>
+            </div>
+            
+            <div class="highlight-box">
+                <p>✅ Sınıflar latent uzayda <strong>topolojik olarak ayrışmış</strong> kümeler oluşturdu. Bu, modelin veri manifoldunu başarıyla öğrendiğini gösteriyor.</p>
+            </div>
+            <div class="slide-number">7 / 12</div>
+        </div>
+
+        <!-- Slide 8: Results - Loss -->
+        <div class="slide">
+            <h2>Sonuçlar: Optimizasyon Dinamiği</h2>
+            
+            <div class="image-container">
+                <!-- Placeholder for actual image -->
+                <div style="width:100%; height:300px; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px dashed #555;">
+                    <span style="color:#888;">[Image: loss_convergence.png]</span>
+                </div>
+                <p class="image-caption">ELBO kayıp fonksiyonunun 10 epoch boyunca yakınsaması</p>
+            </div>
+            
+            <ul>
+                <li><strong>Early epochs:</strong> Hızlı kayıp düşüşü (gradient flow etkili)</li>
+                <li><strong>Mid epochs:</strong> Kayıp azalması yavaşlıyor</li>
+                <li><strong>Late epochs:</strong> Stabilizasyon ve yakınsama</li>
+            </ul>
+            <div class="slide-number">8 / 12</div>
+        </div>
+
+        <!-- Slide 9: Results - Grid -->
+        <div class="slide">
+            <h2>Latent Grid Haritası</h2>
+            
+            <div class="image-container">
+                 <!-- Placeholder for actual image -->
+                 <div style="width:100%; height:300px; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px dashed #555;">
+                    <span style="color:#888;">[Image: latent_grid.png]</span>
+                </div>
+                <p class="image-caption">Latent uzayda düzenli bir ızgara üzerinde decoder çıktıları</p>
+            </div>
+            
+            <p>Bu görselleştirme, latent uzayın <strong>sürekli ve anlamlı</strong> bir yapıya sahip olduğunu gösteriyor. Komşu noktalar benzer rakamlar üretiyor.</p>
+            <div class="slide-number">9 / 12</div>
+        </div>
+
+        <!-- Slide 10: Beta-VAE -->
+        <div class="slide">
+            <h2>β-VAE Ablation Çalışması</h2>
+            
+            <div class="formula">
+                ℒ<sub>β</sub> = BCE(x, x̂) + β · D<sub>KL</sub>(q(z|x) ∥ p(z))
+            </div>
+            
+            <div class="image-container">
+                 <!-- Placeholder for actual image -->
+                 <div style="width:100%; height:300px; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px dashed #555;">
+                    <span style="color:#888;">[Image: beta_ablation.png]</span>
+                </div>
+                <p class="image-caption">Farklı β değerleri için kayıp karşılaştırması</p>
+            </div>
+            
+            <ul>
+                <li><strong>β &lt; 1:</strong> Daha iyi rekonstrüksiyon, daha az düzenlileştirme</li>
+                <li><strong>β = 1:</strong> Standart VAE</li>
+                <li><strong>β &gt; 1:</strong> Daha fazla disentanglement, daha fazla regularization</li>
+            </ul>
+            <div class="slide-number">10 / 12</div>
+        </div>
+
+        <!-- Slide 11: Generation -->
+        <div class="slide">
+            <h2>Örnek Üretimi ve Rekonstrüksiyon</h2>
+            
+            <div class="two-column">
+                <div class="column">
+                    <h3>🎨 Sentetik Üretim</h3>
+                    <div class="image-container">
+                        <!-- Placeholder for actual image -->
+                        <div style="width:100%; height:200px; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px dashed #555;">
+                            <span style="color:#888;">[Image: generated_samples.png]</span>
+                        </div>
+                    </div>
+                    <p style="font-size: 1rem;">z ~ 𝒩(0, I) örneklerinden üretilen rakamlar</p>
+                </div>
+                <div class="column">
+                    <h3>🔄 Rekonstrüksiyon</h3>
+                    <div class="image-container">
+                         <!-- Placeholder for actual image -->
+                         <div style="width:100%; height:200px; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px dashed #555;">
+                            <span style="color:#888;">[Image: reconstruction_comparison.png]</span>
+                        </div>
+                    </div>
+                    <p style="font-size: 1rem;">Orijinal vs Rekonstrüksiyon karşılaştırması</p>
+                </div>
+            </div>
+            <div class="slide-number">11 / 12</div>
+        </div>
+
+        <!-- Slide 12: Conclusion -->
+        <div class="slide thank-you">
+            <h2>Sonuç ve Katkılar</h2>
+            
+            <div class="results-grid" style="max-width: 900px; margin: 40px auto;">
+                <div class="result-card">
+                    <h4>📐 Teorik Katkılar</h4>
+                    <ul style="font-size: 1.1rem;">
+                        <li>Jensen Eşitsizliği ile ELBO türetimi</li>
+                        <li>Reparameterization Trick açıklaması</li>
+                        <li>Gaussian prior seçimi gerekçesi</li>
+                    </ul>
+                </div>
+                <div class="result-card">
+                    <h4>🔬 Deneysel Katkılar</h4>
+                    <ul style="font-size: 1.1rem;">
+                        <li>Latent manifold görselleştirmesi</li>
+                        <li>Latent grid haritası</li>
+                        <li>β-VAE ablation çalışması</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div style="margin-top: 60px;">
+                <p style="font-size: 2rem; color: #f39c12;">Teşekkürler!</p>
+                <p style="font-size: 1.2rem; color: #888; margin-top: 20px;">Sorular?</p>
+            </div>
+            <div class="slide-number">12 / 12</div>
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const wrapper = document.getElementById('sliderWrapper');
+        const totalSlides = slides.length;
+        const progressBar = document.getElementById('progressBar');
+
+        // Initialize progress bar
+        updateProgress();
+
+        function moveSlide(direction) {
+            currentSlide += direction;
+            
+            // Loop boundaries (optional: you can stop at ends instead)
+            if (currentSlide < 0) currentSlide = 0;
+            if (currentSlide >= totalSlides) currentSlide = totalSlides - 1;
+            
+            updateSlidePosition();
+        }
+
+        function updateSlidePosition() {
+            // Move the wrapper by negative percentage of current slide
+            wrapper.style.transform = `translateX(-${currentSlide * 100}vw)`;
+            updateProgress();
+        }
+
+        function updateProgress() {
+            const percentage = ((currentSlide + 1) / totalSlides) * 100;
+            progressBar.style.width = `${percentage}%`;
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                moveSlide(1);
+            } else if (e.key === 'ArrowLeft') {
+                moveSlide(-1);
+            }
+        });
+
+        // Touch swipe support for mobile
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+
+        document.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        });
+
+        function handleSwipe() {
+            if (touchEndX < touchStartX - 50) moveSlide(1); // Swipe Left -> Next
+            if (touchEndX > touchStartX + 50) moveSlide(-1); // Swipe Right -> Prev
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+Submission notes (for you only):
+
+Removed from notebook:
+- AI/automation disclosure sentence.
+- 60-second presentation script cell.
+- Presenter-focused print hints in final code cell.
+
+If you want a presentation script or defense Q&A, tell me and I can generate a separate document.

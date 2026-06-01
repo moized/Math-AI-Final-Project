@@ -1,0 +1,107 @@
+STOKASTİK OPTİMİZASYON VE
+VARYASYONEL  ÇIKARIM İLE ÜRETKEN
+MODELLEME: VAE'LERİN MA TEMA TİKSEL
+TEMELLERİ
+*C. Doersch'in "T utorial on V ariational Autoencoders" (2021) makalesine dayalı
+inceleme raporu
+Mohammed Izedin Mohammed
+Yapay Zekanın Matematiksel Temelleri Dersi
+Özet:  Bu rapor , Carl Doersch'ün "T utorial on V ariational Autoencoders" (2021
+revizyonu) başlıklı makalesi temel alınarak hazırlanmıştır . Çalışma, ür etken
+modellemedeki temel zorluk olan "hesaplanamaz integral" pr oblemini ele
+almakta ve bu pr oblemin V aryasyonel Çıkarım ile Kanıt Alt Sınırı (ELBO)
+türetimi kullanılarak nasıl bir optimizasyon pr oblemine dönüştürüldüğünü
+incelemektedir . Ayrıca, modelin stokastik gradyan inişi (SGD) ile eğitilebilmesini
+sağlayan "Y eniden Parametr elendirme Hilesi" (Reparameterization T rick)
+matematiksel olarak açıklanmıştır .
+Anahtar Kelimeler:  Varyasyonel Otokodlayıcılar , ELBO, Stokastik Optimizasyon,
+Reparameterization T rick, KL  Iraksaması.
+1. GİRİŞ: ÜRETKEN MODELLEME PROBLEMİ
+Makine öğrenmesinde temel amacımız, veri noktaları  üzerinde tanımlı 
+olasılık dağılımını modelleyerek yeni örnekler üretmektir . Bu süreçte, verinin
+gözlemlenemeyen bir  değişkeni tarafından üretildiğini varsayan "Gizli Değişken
+Modelleri" kullanılır .
+Bu modellerde verinin marjinal olabilirliğini (marginal likelihood) hesaplamak için
+şu integrali çözmemiz gerekir:X P(X)
+z
+Burada  önsel (prior) dağılımdır . Bu integra l yüksek boyutlu uzaylarda
+hesaplanamaz  durumdadır . Çünkü tüm olası  değerleri üzerinden integrasyon
+almak, işlem yükü açısından imkansızdır ve gerçek sonsal dağılım 
+bilinmemektedir [1].
+2. VARYASYONEL  ÇIKARIM VE ELBO TÜRETİMİ
+İntegrali doğrudan hesaplayamadığımız için, problemi bir optimizasyon problemine
+dönüştüren Varyasyonel Çıkarım  yöntemini kullanırız. Bu yöntemde, bilinmeyen
+ dağılımına yaklaşayan parametrik bir  dağılımı (Encoder)
+tanımlanır .
+Amacımız, bu iki dağılım arasındaki farkı minimize etmektir . Bu farkı ölçmek için
+Kullback-Leibler (KL) Iraksaması kullanılır:
+Bayes kuralı uygulanıp,  terimi 'den bağımsız olduğu için dışarı
+alındığında ve terimler yeniden düzenlendiğinde, optimizasyon hedefimiz olan
+Kanıt Alt Sınırı (Evidence Lower  Bound - ELBO)  elde edilir:
+KL ıraksaması her zaman negatif olma yan bir değer olduğundan ( ), sağ
+taraftaki ifade log-olabilirlik için bir alt sınırdır:
+Bu sonuç, entegrasyon probleminin başarıyla bir optimizasyon problemine
+dönüştürüldüğünü kanıtlar [1].P(X)=∫P(X|z;θ)P(z)dz(1)
+P(z)
+z
+P(z|X)
+P(z|X) Q(z|X)
+DKL(Q(z|X)||P(z|X))=Ez∼Q[logQ(z|X)−logP(z|X)](2)
+logP(X) z
+logP(X)−DKL(Q||P)=EQ[logP(X|z)]−DKL(Q(z|X)||P(z))(3)
+DKL≥0
+logP(X)≥ELBO
+3. OPTİMİZASYON HEDEFİNİN YORUMLANMASI
+Maksimize edilecek ELBO denklemi, sinir ağının minimize etmesi gereken bir
+kayıp fonksiyonu olarak şu şekilde ifade edilir:
+Bu yapı, kısıtlı optimizasyon  (constrained optimization) prensibine dayanır:
+1. Yeniden Oluşturma (Reconstruction):  Veriyi gizli uzaydan ne kadar
+iyi geri oluşturabildiğimizi ölçer . Veriye sadakati (fidelity) temsil eder .
+2. Düzenlileştirme (Regularization):  Öğrenilen gizli uzayın, önsel
+dağılımımız olan Standart Normal Dağılım ( ) ile ne kadar
+eşleştiğini ölçer . Bu terim, modelin aşırı öğrenmesini (overfitting)
+engelleyen bir ceza (penalty) görevi görür .
+4. ST OKASTİK GRADY AN VE YENİDEN P ARAMETRELENDİRME
+Teorik hedef belirlenmiş olsa da, modelin eğitimi sırasında pratik bir engel ortaya
+çıkar . Eğitim için kullanılan Geri Yayılım (Backpropagation) algoritması,
+türevlenebilir işlemlere ihtiyaç duyar . Ancak, ağın içindeki örnekleme işlemi (
+) stokastik olduğu için türevlenemez. Bu durum, gradyan akışını
+durdurur .
+Bu sorunu çözmek için, Yeniden Parametr elendirme Hilesi  kullanılır . Rastgelelik,
+sistemin parametrelerinden ayrılarak harici bir gürültü değişkenine ( ) taşınır:
+Bu koordinat dönüşümü sayesinde ;  ve  parametrelerinin deterministik bir
+fonksiyonu haline gelir. Böylece  ve  türevleri hesaplanabilir hale gelir ve
+model uçtan uca eğitilebilir [1].L(θ,ϕ)=−Ez∼Qϕ[logPθ(X|z)]
+Reconstruction+DKL(Qϕ(z|X)||P(z))
+Regularization(4)
+ 
+  
+ 
+ 
+N(0,I)
+z∼N(μ,σ2)
+ϵ
+z=μ(X)+σ(X)⊙ϵ,burada ϵ∼N(0,I)(5)
+zμσ
+∂z
+∂μ∂z
+∂σ
+5. GAUSSİAN ÖNSEL  DAĞILIMIN AVANT AJI
+Önsel (Prior) ve sonsal (Posterior) dağılımlar için Gaussian kullanmanın temel
+avantajı, KL  Iraksaması teriminin analitik (kapalı form) bir çözümünün olmasıdır:
+Bu formül sayesinde, düzenlileştirme terimi için simülasyon yapmaya gerek
+kalmaz, eğitim hızı artar ve varyans düşer .
+6. SONUÇ
+Bu çalışmada, VAE'lerin matematiksel altyapısı aaçıklanmıştır . VAE'ler;
+hesaplanamaz bir integrali ELBO kullanarak çözülebilir bir optimizasyon
+problemine dönüştürmesi ve türevlenemeyen örnekleme işlemini Yeniden
+Parametrelendirme Hilesi ile aşması sayesinde, modern üretken yapay zekanın
+temel taşlarından biri olmuştur .
+Referanslar
+[1] C. Doersch, "T utorial on Variational Autoencoders," arXiv preprint arXiv:1606.05908, 2016 (revised 2021).DKL=−1
+2J
+∑
+j=1(1+log(σ2
+j)−μ2
+j−σ2
+j)
