@@ -1,66 +1,57 @@
-import PyPDF2
+import os
+import pdfplumber
 
-def read_pdf(pdf_path):
+def read_pdf_high_fidelity(pdf_path):
     """
-    Read and extract text from a PDF file.
-    
-    Args:
-        pdf_path (str): Path to the PDF file
-    
-    Returns:
-        str: Extracted text from the PDF
+    Extracts text from an academic PDF while preserving layout 
+    and handling multi-column scientific text structure cleanly.
     """
-    text = ""
+    extracted_text = ""
     
+    if not os.path.exists(pdf_path):
+        print(f"❌ Error: File '{pdf_path}' not found.")
+        return None
+
     try:
-        with open(pdf_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            num_pages = len(pdf_reader.pages)
+        with pdfplumber.open(pdf_path) as pdf:
+            num_pages = len(pdf.pages)
+            print(f"Processing: {os.path.basename(pdf_path)} ({num_pages} pages)")
             
-            print(f"Total pages: {num_pages}\n")
-            
-            for page_num, page in enumerate(pdf_reader.pages):
-                print(f"--- Page {page_num + 1} ---")
-                page_text = page.extract_text()
-                text += page_text + "\n"
-                print(page_text[:200] + "...\n")  # Print first 200 characters of each page
-        
-        return text
-    
-    except FileNotFoundError:
-        print(f"Error: File '{pdf_path}' not found.")
-        return None
+            for page_num, page in enumerate(pdf.pages):
+                # .extract_text(layout=True) attempts to layout text close to original positioning
+                page_text = page.extract_text(layout=False)
+                if page_text:
+                    extracted_text += f"\n--- Page {page_num + 1} ---\n" + page_text + "\n"
+                    
+        return extracted_text
     except Exception as e:
-        print(f"Error reading PDF: {e}")
+        print(f"❌ Error reading PDF {pdf_path}: {e}")
         return None
-
 
 if __name__ == "__main__":
-    # Read both PDFs
-    pdf_files = [
-        "Tutorial on Variational Autoencoders (VAE) (2021 revision).pdf",
-        "VAE Raporu - Mohammed Izedin Mohammed.pdf"
+    # Base directory targets your newly organized reports folder
+    reports_dir = os.path.join(os.getcwd(), "reports")
+    
+    # Corrected, snake_case academic filenames located in reports/
+    pdf_targets = [
+        "tutorial_vae.pdf",
+        "vae_report.pdf"
     ]
     
-    all_text = {}
+    print("🔄 Starting High-Fidelity Text Extraction Pipeline...\n")
     
-    for pdf_file in pdf_files:
-        print(f"\n{'='*60}")
-        print(f"Reading: {pdf_file}")
-        print(f"{'='*60}\n")
+    for pdf_name in pdf_targets:
+        full_pdf_path = os.path.join(reports_dir, pdf_name)
         
-        full_text = read_pdf(pdf_file)
+        extracted_content = read_pdf_high_fidelity(full_pdf_path)
         
-        if full_text:
-            all_text[pdf_file] = full_text
-            # Save each PDF's text to a separate file
-            output_filename = pdf_file.replace(".pdf", "_extracted.txt")
-            with open(output_filename, "w", encoding="utf-8") as f:
-                f.write(full_text)
-            print(f"\nText extracted and saved to '{output_filename}'\n")
-    
-    print(f"\n{'='*60}")
-    print("Summary:")
-    print(f"{'='*60}")
-    for pdf_file in all_text:
-        print(f"✓ {pdf_file} - {len(all_text[pdf_file])} characters extracted")
+        if extracted_content:
+            # Generate target name inside the same reports folder
+            output_txt_name = pdf_name.replace(".pdf", "_extracted.txt")
+            full_output_path = os.path.join(reports_dir, output_txt_name)
+            
+            with open(full_output_path, "w", encoding="utf-8") as f:
+                f.write(extracted_content)
+            print(f"✅ Saved clean extraction to: reports/{output_txt_name}\n")
+            
+    print("🎉 Ingestion processing complete.")
